@@ -1,4 +1,4 @@
-tensorflow
+tensorflow==1.14.0
 opencv-python
 matplotlib
-numpy
+numpy==1.16.4

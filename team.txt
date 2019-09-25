@@ -1,0 +1,18 @@
+Project hiện giờ sẽ gồm 4 phase chính như sau:
+- Data Annotation:
+    - Tool: Google Colab
+    - Mô tả: Đọc và phân tích file xml, trong đó có thông tin về ảnh (tên,chiều dài,chiều rộng,boungding box của logo) sau đó ghi ra file txt theo format cho trước
+    - Gợi ý: Về format của file .txt xem trong repo github, file xml được lưu trong bộ dữ liệu mình đã gửi, các bạn lưu về drive và đọc vào bằng google colab
+- Data Preparation:
+    - Tool: Google Colab, Tensorflow
+    - Mô tả: Code lớp xử lý dữ liệu cho mô hình, thực hiện phân tích thông tin từ file txt để xây dựng dữ liệu đầu vào và thực hiện các bước tiền xử lý trên dữ liệu, thực hiện kmean clustering để tỉm ra các anchors box
+    - Gợi ý: xem mục utils/data_utils.py và utils/data_aug.py trong repo github ở bên đứoi
+- Model Implementation:
+    - Tool: Google Colab, Tensorflow
+    - Mô Tả: Code kiến trúc của mô hình cùng các phase huần luyện, hậu xử lý đầu ra và đánh giá độ tốt của mô hình cùng việc đóng gói mô hình cho web server sử dụng
+    - Gợi ý: xem các mục còn lại trong repo
+- Web Server:
+    - Tool: Flask
+    - Mô Tả: Code một web server phục vụ cho việc demo trên lớp.
+
+link repo github: https://github.com/wizyoung/YOLOv3_TensorFlow?fbclid=IwAR1rc4mik7VuYTq_E8OkRqODnHlIsY8If5NwhbGN4OxemLJLUK4qug8v6X4
