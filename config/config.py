@@ -1,0 +1,69 @@
+from easydict import EasyDict
+import math
+import os
+import sys
+working_dir = os.getcwd()
+sys.path.append(working_dir)
+
+from utils.misc import parse_anchors
+
+YOLO_CONFIG = EasyDict()
+
+YOLO_CONFIG.IMAGE_SIZE = [416,416]
+YOLO_CONFIG.USE_FOCAL_LOSS = False
+YOLO_CONFIG.USE_LABEL_SMOOTH = False
+
+
+YOLO_CONFIG.TRAIN_PATH = '/home/huydao/Source/LogoDetection/data/metadata/train.txt'
+YOLO_CONFIG.VAL_PATH = '/home/huydao/Source/LogoDetection/data/metadata/val.txt'
+
+YOLO_CONFIG.N_CLASSES = 1
+YOLO_CONFIG.NMS_TOPK = 150
+YOLO_CONFIG.NMS_THRESHOLD = 0.45
+YOLO_CONFIG.SCORE_THRESHOLD = 0.01
+
+YOLO_CONFIG.RESTORE_PATH = '/home/huydao/Source/LogoDetection/data/weights/yolov3.ckpt'
+YOLO_CONFIG.SAVE_DIR = '/home/huydao/Source/LogoDetection/checkpoints'
+
+YOLO_CONFIG.BATCH_SIZE = 8
+YOLO_CONFIG.TOTAL_EPOCHS = 10
+YOLO_CONFIG.TRAIN_EVALUATION_STEP = 10
+YOLO_CONFIG.VAL_EVALUATION_STEP = 2
+YOLO_CONFIG.SAVE_EPOCH = 10
+
+YOLO_CONFIG.BATCH_NORM_DECAY = 0.99
+WEIGHT_DECAY = 5e-4
+
+YOLO_CONFIG.CLASSES_PATH = ''
+YOLO_CONFIG.ANCHORS_PATH = ''
+
+YOLO_CONFIG.TRAIN_EXAMPLES = len(open(YOLO_CONFIG.TRAIN_PATH,'r').readlines())
+YOLO_CONFIG.VAL_EXAMPLES = len(open(YOLO_CONFIG.VAL_PATH,'r').readlines())
+
+YOLO_CONFIG.TRAIN_BATCH_NUM = int(math.ceil(float(YOLO_CONFIG.TRAIN_EXAMPLES)/YOLO_CONFIG.BATCH_SIZE))
+
+YOLO_CONFIG.ANCHORS = parse_anchors(YOLO_CONFIG.ANCHORS_PATH)
+
+YOLO_CONFIG.MULTI_SCALE_TRAIN = True
+YOLO_CONFIG.USE_MIX_UP = True
+YOLO_CONFIG.LETTER_BOX_RESIZE = True
+
+YOLO_CONFIG.NUM_THREADS = 10
+
+YOLO_CONFIG.PRE_FETCH = 5
+
+YOLO_CONFIG.OPTIMIZER = 'adam'
+
+YOLO_CONFIG.LEARNING_RATE = 0.01
+
+YOLO_CONFIG.GLOBAL_STEP = 0
+
+YOLO_CONFIG.UPDATE_PATH = ['yolov3/yolov3_head']
+
+YOLO_CONFIG.SAVE_OPTIMIZER = False
+
+YOLO_CONFIG.RESTORE_INCLUDE = None
+
+YOLO_CONFIG.RESTORE_EXCLUDE = ['yolov3/yolov3_head/Conv_14', 'yolov3/yolov3_head/Conv_6', 'yolov3/yolov3_head/Conv_22']
+
+

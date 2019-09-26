@@ -2,11 +2,14 @@ from layers import ConvBNLeakyRelu,Darknet53,YoloBlock
 import tensorflow as tf
 class Yolov3:
 
-    def __init__(self):
-        self.n_classes= 1
+    def __init__(self,n_classes,anchors,use_label_smooth,use_focal_loss):
+        self.n_classes= n_classes
+        self.use_focal_loss = use_label_smooth
+        self.use_label_smooth = use_focal_loss
         self.anchors = [[10, 13], [16, 30], [33, 23],
             [30, 61], [62, 45], [59,  119],
             [116, 90], [156, 198], [373,326]]
+        self.anchors = anchors
 
     def forward(self,inputs):
 
@@ -217,9 +220,154 @@ class Yolov3:
 
     def caculate_loss_layer(self,feature_map,y_true,anchors):
 
-        pass
+        grid_size = tf.shape(feature_map)[1:3]
+
+        ratio = tf.cast(self.image_size/grid_size,dtype=tf.float32)
+
+        N = tf.cast(tf.shape(feature_map)[0],dtype=tf.float32)
+
+        x_y_offset,pred_boxes,pred_conf_logits,pred_prob_logits = self.process_output(feature_map,anchors)
+
+        # Get mask
+
+        #shape: take 416 x 416 input image and 13 * 13 feature map for example
+
+        # [N,13,13,3,1]
+
+        object_mask = y_true[...,4:5]
+
+        ignore_mask = tf.TensorArray(tf.float32,size=0,dynamic_size=True)
+
+        def loop_cond(idx,ignore_mask):
+
+            return tf.less(idx,tf.cast(N,tf.int32))
+
+        def loop_body(idx,ignore_mask):
+
+            valid_true_boxes = tf.boolean_mask(y_true[idx,...,0:4],tf.cast(object_mask[idx,...,0],'bool'))
+
+            iou = self.caculate_box_iou(pred_boxes[idx],valid_true_boxes)
+
+            #shape: [13,13,3]
+
+            best_iou = tf.reduce_max(iou,axis=-1)
+
+            #shape: [13,13,3]
+
+            ignore_mask_tmp = tf.cast(best_iou<0.5,tf.float32)
+
+            ignore_mask = ignore_mask.write(idx,ignore_mask_tmp)
+
+            return idx + 1, ignore_mask
+        _,ignore_mask = tf.while_loop(cond=loop_cond,body=loop_body,loop_vars=[0,ignore_mask])
+
+        ignore_mask = ignore_mask.stack()
+        #shape :[N,13,13,3,1]
+
+        ignore_mask = tf.expand_dims(ignore_mask,-1)
+
+        #shape: [N,13,13,3,2]
+
+        pred_box_xy = pred_boxes[...,0:2]
+
+        pred_box_wh = pred_boxes[...,2:4]
+
+        #get xy coordinates in one cell from feature map
+        #numerical range: 0 ~ 1
+        #shape [N,13,13,3,2]
+
+        true_xy = y_true[...,0:2]/ ratio[::-1] - x_y_offset
+        pred_xy = pred_box_xy / ratio[::-1] - x_y_offset
+
+        #get_tw_th
+        #numerical range: 0 ~1
+        #shape: [ N,13,13,3,2]
+
+        true_tw_th = y_true[...,2:4] / anchors
+        pred_tw_th = pred_box_wh / anchors
+
+        # for numerical stability
+
+        true_tw_th = tf.where(condition=tf.equal(true_tw_th,0),x=tf.ones_like(true_tw_th),y=true_tw_th)
+        pred_tw_th = tf.where(condition=tf.equal(pred_tw_th,0),x=tf.ones_like(pred_tw_th),y=pred_tw_th)
+
+        true_tw_th = tf.log(tf.clip_by_value(true_tw_th,1e-9,1e9))
+        pred_tw_th = tf.log(tf.clip_by_value(pred_tw_th,1e-9,1e9))
+
+        # box size punishment:
+        # box with smaller area has bigger weight. This is taken from the yolo darknet C source code.
+        # shape: [N, 13, 13, 3, 1]
+
+        box_loss_scale = 2. - (y_true[..., 2:3] / tf.cast(self.img_size[1], tf.float32)) * (
+                    y_true[..., 3:4] / tf.cast(self.img_size[0], tf.float32))
+
+        ############
+        # loss_part
+        ############
+        # mix_up weight
+        # [N, 13, 13, 3, 1]
+
+        mix_w = y_true[...,-1]
+
+        #shape [N,13,13,3,1]
+
+        xy_loss = tf.reduce_sum(tf.square(true_xy - pred_xy) * object_mask * box_loss_scale * mix_w) / N
+        wh_loss = tf.reduce_sum(tf.square(true_tw_th - pred_tw_th) * object_mask * box_loss_scale * mix_w) / N
+
+        #shape: [N,13,13,3,1]
+
+        conf_pos_mask = object_mask
+
+        conf_neg_mask = (1 - object_mask) * ignore_mask
+
+        conf_loss_pos = conf_pos_mask * tf.nn.sigmoid_cross_entropy_with_logits(labels=object_mask,logits=pred_conf_logits)
+
+        conf_loss_neg = conf_neg_mask * tf.nn.sigmoid_cross_entropy_with_logits(labels=object_mask,logits=pred_conf_logits)
+
+        # TODO: may need to balance the pos-neg by multiplying some weights
+
+        conf_loss = conf_loss_pos + conf_loss_neg
+
+        if self.use_focal_loss:
+            alpha = 1.0
+            gamma =2.0
+            # TODO: alpha should be a mask array if needed
+            focal_mask = alpha * tf.pow(tf.abs(object_mask - tf.sigmoid(pred_conf_logits),gamma))
+            conf_loss *= focal_mask
+
+        conf_loss = tf.reduce_sum(conf_loss * mix_w) / N
+
+        #shape: [N,13,13,3,1]
+        #whether to use label_smoorh
+
+        if self.use_label_smooth:
+            delta = 0.01
+            label_target = (1- delta) * y_true[...,5:-1] + delta * 1. / self.n_classes
+
+        else:
+
+            label_target = y_true[...,5:-1]
+
+        class_loss = object_mask * tf.nn.sigmoid_cross_entropy_with_logits(labels=label_target,logits=pred_prob_logits)
+        class_loss = tf.reduce_sum(class_loss) / N
+
+        return xy_loss,wh_loss,conf_loss,class_loss
+
+    def compute_loss(self,y_pred,y_true):
+
+        loss_xy,loss_wh,loss_conf,loss_class = 0.,0.,0.,0.
+        anchor_group = [self.anchors[6:9],self.anchors[3:6],self.anchors[0:3]]
 
 
+        for i in range(len(y_pred)):
+            result = self.caculate_loss_layer(y_pred[i],y_true[i],anchor_group[i])
+            loss_xy += result[0]
+            loss_wh += result[1]
+            loss_conf+= result[2]
+            loss_class+= result[3]
+
+        total_loss = loss_xy + loss_wh + loss_conf + loss_class
+        return [total_loss,loss_xy,loss_wh,loss_conf,loss_class]
 
 
 if __name__ == '__main__':
